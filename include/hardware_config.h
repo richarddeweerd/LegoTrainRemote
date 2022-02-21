@@ -8,3 +8,14 @@
 #define PIN_USB_VOLTAGE 39
 #define PIN_POWER 0
 #define TFT_BRIGHTNESS 0
+#define PIN_MATRIX_X0 14
+#define PIN_MATRIX_X1 27
+#define PIN_MATRIX_X2 26
+#define PIN_MATRIX_X3 25
+#define PIN_MATRIX_Y0 33
+#define PIN_MATRIX_Y1 32
+#define PIN_MATRIX_Y2 34
+#define PIN_MATRIX_Y3 36
+
+
+
