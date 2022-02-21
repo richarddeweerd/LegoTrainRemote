@@ -1,0 +1,10 @@
+#define PIN_R1_A 2
+#define PIN_R1_B 15
+#define PIN_R2_A 16
+#define PIN_R2_B 4
+#define PIN_TFT_POWER 22
+#define PIN_TFT_LED 17
+#define PIN_BAT_VOLTAGE 35
+#define PIN_USB_VOLTAGE 39
+#define PIN_POWER 0
+#define TFT_BRIGHTNESS 0

@@ -1,15 +1,15 @@
 #include <Arduino.h>
+#include "hardware_config.h"
+#include <SPIFFS.h>
+#include "WiFi.h"
+
+#include "ConfigStore.h"
 #include "Rotary.h"
 #include "TFT_eSPI.h"
+#include "Button2.h"
 
-#define PIN_R1_A 2
-#define PIN_R1_B 15
-#define PIN_R2_A 16
-#define PIN_R2_B 4
-#define PIN_TFT_POWER 22
-#define PIN_TFT_LED 17
-#define PIN_BAT_VOLTAGE 35
-#define PIN_USB_VOLTAGE 39
+#include "task_screen.h"
+#include "task_powermgmt.h"
 
 #define CLICKS_PER_STEP 4 // this number depends on your rotary encoder
 #define MIN_POS -100
@@ -17,12 +17,18 @@
 #define START_POS 0
 #define INCREMENT 1
 
+TaskHandle_t Screen_Task;
+TaskHandle_t PowerManagement_Task;
+
+QueueHandle_t screenQueue;
+QueueHandle_t powermgmtQueue;
+
 Rotary r_1;
 Rotary r_2;
 RotaryCounter c_1;
 RotaryCounter c_2;
 
-TFT_eSPI tft = TFT_eSPI();
+Button2 button;
 
 void IRAM_ATTR ISR_1()
 {
@@ -51,11 +57,84 @@ void sleep()
   esp_deep_sleep_start();
 }
 
+void longpress(Button2 &btn)
+{
+  digitalWrite(PIN_TFT_POWER, HIGH);
+  ledcWrite(TFT_BRIGHTNESS, 0);
+  delay(1000);
+  sleep();
+}
+
+void sendScreenMessage(SCREEN_MSG_TYPE msg_type, int16_t val)
+{
+  screenMessage msg;
+  msg.type = msg_type;
+  msg.value = val;
+  xQueueSend(screenQueue, (void *)&msg, 10);
+}
+
 void setup()
 {
   // put your setup code here, to run once:
   Serial.begin(115200);
-  Serial.println("Booting");
+  Serial.println(F("Booting..."));
+
+  while (!SPIFFS.begin(true))
+  {
+    Serial.println(F("Failed to initialize SD library"));
+    delay(1000);
+  }
+  // SPIFFS.format();
+  Serial.println(F("Loading configuration..."));
+
+  Serial.println(F("Initializing powermanagement..."));
+
+  powermgmtQueue = xQueueCreate(10, sizeof(powerMessage));
+
+  xTaskCreatePinnedToCore(   // Use xTaskCreate() in vanilla FreeRTOS
+      TaskPower,             // Function to be called
+      "Power",               // Name of task
+      4096,                  // Stack size (bytes in ESP32, words in FreeRTOS)
+      NULL,                  // Parameter to pass to function
+      0,                     // Task priority (0 to configMAX_PRIORITIES - 1)
+      &PowerManagement_Task, // Task handle
+      0);
+
+  Serial.println(F("Initializing screen..."));
+  pinMode(PIN_TFT_POWER, OUTPUT);
+  digitalWrite(PIN_TFT_POWER, LOW);
+
+  // setup backlight
+  ledcSetup(0, 5000, 10);
+  ledcAttachPin(PIN_TFT_LED, TFT_BRIGHTNESS);
+  ledcWrite(TFT_BRIGHTNESS, 1023);
+
+  screenQueue = xQueueCreate(10, sizeof(screenMessage));
+
+  xTaskCreatePinnedToCore( // Use xTaskCreate() in vanilla FreeRTOS
+      TaskScreen,          // Function to be called
+      "Screen",            // Name of task
+      4096,                // Stack size (bytes in ESP32, words in FreeRTOS)
+      NULL,                // Parameter to pass to function
+      0,                   // Task priority (0 to configMAX_PRIORITIES - 1)
+      &Screen_Task,        // Task handle
+      0);
+
+  button.begin(PIN_POWER);
+  // button.setLongClickHandler(longpress);
+  button.setLongClickTime(2000);
+  button.setLongClickDetectedHandler(longpress);
+
+  Serial.print("Connecting to Wifi");
+  WiFi.begin();
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nConnected to the WiFi network");
+
   c_1.begin(MIN_POS, MAX_POS, CLICKS_PER_STEP, START_POS, false);
   c_2.begin(MIN_POS, MAX_POS, CLICKS_PER_STEP, START_POS, false);
   r_1.begin(PIN_R1_A, PIN_R1_B, 10, &c_1);
@@ -68,28 +147,18 @@ void setup()
   attachInterrupt(PIN_R1_B, ISR_1, CHANGE);
   attachInterrupt(PIN_R2_A, ISR_2, CHANGE);
   attachInterrupt(PIN_R2_B, ISR_2, CHANGE);
-  pinMode(PIN_TFT_POWER, OUTPUT);
-  pinMode(PIN_TFT_LED, OUTPUT);
-
-  pinMode(PIN_BAT_VOLTAGE, INPUT);
-  pinMode(PIN_USB_VOLTAGE, INPUT);
-  digitalWrite(PIN_TFT_POWER, LOW);
-  digitalWrite(PIN_TFT_LED, HIGH);
-  tft.init();
-  tft.setRotation(2);
-
-  tft.fillScreen(TFT_BLUE);
+  sendScreenMessage(SCREEN_MSG_TYPE::PAGE, 10);
 }
 
 void loop()
 {
-  // put your main code here, to run repeatedly:
-  tft.fillScreen(TFT_BLUE);
-  uint16_t bat_volt = analogRead(PIN_BAT_VOLTAGE);
-  uint16_t usb_volt = analogRead(PIN_USB_VOLTAGE);
+  powerMessage pwr_msg;
+  if (xQueueReceive(powermgmtQueue, (void *)&pwr_msg, 0) == pdTRUE)
+  {
+    sendScreenMessage(SCREEN_MSG_TYPE::EXT_POWER, pwr_msg.external_power);
+    sendScreenMessage(SCREEN_MSG_TYPE::BAT, pwr_msg.battery_level);
+  }
 
-  tft.drawNumber(map(bat_volt, 0, 4095, 0, 7250), 10, 10);
-  tft.drawNumber(map(usb_volt, 0, 4095, 0, 7250), 10, 30);
+  button.loop();
   delay(1000);
-  // sleep();
 }
