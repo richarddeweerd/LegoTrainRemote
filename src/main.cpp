@@ -2,6 +2,7 @@
 #include "hardware_config.h"
 #include <SPIFFS.h>
 #include "WiFi.h"
+#include "WifiManager.h"
 
 #include "ConfigStore.h"
 #include "Rotary.h"
@@ -22,6 +23,14 @@ TaskHandle_t PowerManagement_Task;
 
 QueueHandle_t screenQueue;
 QueueHandle_t powermgmtQueue;
+
+WiFiManager wm; // global wm instance
+
+WiFiManagerParameterCheckBox mqtt_enabled;  // global param ( for non blocking w params )
+WiFiManagerParameter mqtt_host;             // global param ( for non blocking w params )
+WiFiManagerParameter mqtt_port;             // global param ( for non blocking w params )
+WiFiManagerParameterPassword mqtt_password; // global param ( for non blocking w params )
+// WiFiManagerParameterSpacer spacer_1;          // global param ( for non blocking w params )
 
 Rotary r_1;
 Rotary r_2;
@@ -73,6 +82,31 @@ void sendScreenMessage(SCREEN_MSG_TYPE msg_type, int16_t val)
   xQueueSend(screenQueue, (void *)&msg, 10);
 }
 
+String getParam(String name)
+{
+  // read parameter from server, for customhmtl input
+  String value;
+  if (wm.server->hasArg(name))
+  {
+    value = wm.server->arg(name);
+  }
+  return value;
+}
+
+void saveParamCallback()
+{
+  printf("\nSaving...\n");
+  printf("string_param: %s\n", getParam("string_param").c_str());
+  printf("password_param: %s\n", getParam("password_param").c_str());
+  // printf("checkbox1_param: %s\n", getParam("checkbox1_param").c_str());
+  // Serial.println(checkbox1_param.isChecked()); //Alternative option
+  // printf("checkbox2_param: %s\n", getParam("checkbox2_param").c_str());
+  // Serial.println(checkbox2_param.isChecked()); //Alternative option
+  // printf("select_param: %s\n", getParam("select_param").c_str());
+  // printf("checkbox_param2: %s\n", getParam("checkbox_param2").c_str());
+  // printf("radio_param: %s\n", getParam("radio_param").c_str());
+}
+
 void setup()
 {
   // put your setup code here, to run once:
@@ -120,20 +154,56 @@ void setup()
       &Screen_Task,        // Task handle
       0);
 
+  new (&mqtt_enabled) WiFiManagerParameterCheckBox("mqtt_enabled", "Enable MQTT");
+  new (&mqtt_host) WiFiManagerParameter("mqtt_host", "MQTT Host", "mqtt.host.com", 40);
+  new (&mqtt_port) WiFiManagerParameter("mqtt_port", "MQTT Port", "1883", 40);
+  new (&mqtt_password) WiFiManagerParameterPassword("password_param", "Password Param", "", 40);
+
+  wm.addParameter(&mqtt_enabled);
+  wm.addParameter(&mqtt_host);
+  wm.addParameter(&mqtt_port);
+  wm.addParameter(&mqtt_password);
+  wm.setSaveParamsCallback(saveParamCallback);
+
+  std::vector<const char *> menu = {"wifi", "info", "param", "sep", "erase", "update", "restart", "exit"};
+  wm.setMenu(menu);
+  wm.setConfigPortalTimeout(30);   // auto close configportal after n seconds
+  wm.setCaptivePortalEnable(true); // disable captive portal redirection
+  wm.setAPClientCheck(true);       // avoid timeout if client connected to softap
+
+  // wifi scan settings
+  // wm.setRemoveDuplicateAPs(false); // do not remove duplicate ap names (true)
+  // wm.setMinimumSignalQuality(20);  // set min RSSI (percentage) to show in scans, null = 8%
+  // wm.setShowInfoErase(false);      // do not show erase button on info page
+  // wm.setScanDispPerc(true);       // show RSSI as percentage not graph icons
+
+  // wm.setBreakAfterConfig(true);   // always exit configportal even if wifi save fails
+
+  bool connect_result;
+  connect_result = wm.autoConnect("AutoConnectAP", "password"); // password protected ap
+
+  if (!connect_result)
+  {
+    printf("Failed to connect or hit timeout\n");
+    // ESP.restart();
+  }
+  else
+  {
+    // if you get here you have connected to the WiFi
+    printf("connected...yeey :)\n");
+    wm.startWebPortal();
+  }
+
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    printf("Connecting to WiFi..\n");
+  }
+  printf("Connected to the WiFi network\n");
   button.begin(PIN_POWER);
   // button.setLongClickHandler(longpress);
   button.setLongClickTime(2000);
   button.setLongClickDetectedHandler(longpress);
-
-  Serial.print("Connecting to Wifi");
-  WiFi.begin();
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println("\nConnected to the WiFi network");
 
   c_1.begin(MIN_POS, MAX_POS, CLICKS_PER_STEP, START_POS, false);
   c_2.begin(MIN_POS, MAX_POS, CLICKS_PER_STEP, START_POS, false);
@@ -160,5 +230,5 @@ void loop()
   }
 
   button.loop();
-  delay(1000);
+  wm.process();
 }

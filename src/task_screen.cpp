@@ -8,11 +8,11 @@ extern QueueHandle_t screenQueue;
 TFT_eSPI tft = TFT_eSPI(); // Invoke library, pins defined in User_Setup.h
 GUI_Screen screen = GUI_Screen(&tft);
 GUI_Form bootpage = GUI_Form(&tft, TFT_GREEN);
-GUI_Form page1 = GUI_Form(&tft, TFT_BLUE);
+GUI_Form page1 = GUI_Form(&tft, TFT_BLACK);
 
 GUI_Taskbar taskbar = GUI_Taskbar(&tft, 0, 0, 0, 16, TFT_LIGHTGREY);
 GUI_BatteryBar batterybar = GUI_BatteryBar(&tft, 104, 1, TFT_BLACK);
-GUI_Form mainform = GUI_Form(&tft, 0, 16, 0, 0, TFT_RED);
+GUI_Form mainform = GUI_Form(&tft, 0, 16, 0, 0, TFT_BLUE);
 
 GUI_Form train1form = GUI_Form(&tft, 2, 2, 61, 136, TFT_RED);
 GUI_Form train2form = GUI_Form(&tft, 65, 2, 61, 136, TFT_RED);
